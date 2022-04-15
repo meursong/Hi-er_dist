@@ -1,0 +1,84 @@
+function BandWebAuthSignUpModule(signUpAuthInfo) {
+	this.timeCorrection = signUpAuthInfo.timeCorrection;
+	this.rkey= signUpAuthInfo.rkey;
+	this.secretKey= bauth.sjcl.codec.base64.toBits(signUpAuthInfo.secretkeyStr);
+	this.iv= bauth.sjcl.codec.base64.toBits(signUpAuthInfo.ivStr);
+	this.ciphertext= bauth.sjcl.codec.base64.toBits(signUpAuthInfo.ciphertextStr);
+}
+
+BandWebAuthSignUpModule.prototype.prepareSignUpFormSubmit = function(form) {
+	$("input[name='rkey']", form).remove();
+	$("input[name='timestamp']", form).remove();
+	$("input[name='signature']", form).remove();
+	$("input[name='next_action']", form).remove();
+	$("input[name='email_next_action']", form).remove();
+
+	var rkeyInput = $("<input type='hidden' value=" + this.rkey +" name='rkey'>");
+	rkeyInput.appendTo(form);
+
+	var timestampInput = $("<input type='hidden' value="+(new Date().getTime() + this.timeCorrection)+" name='timestamp'>");
+	timestampInput.appendTo(form);
+
+	var baseString = this.generateBaseString($(form).attr("action"), $(form).serializeArray());
+	var signatureInput = $("<input type='hidden' value=" + this.makeSignature(baseString) + " name='signature'>");
+	signatureInput.appendTo(form);
+
+	var emailSignUpAction = $("<input type='hidden' value='email_sign_up' name='email_next_action'>");
+	emailSignUpAction.appendTo(form);
+
+	var phoneSignUpAction = $("<input type='hidden' value='phone_sign_up' name='next_action'>");
+	phoneSignUpAction.appendTo(form);
+}
+
+BandWebAuthSignUpModule.prototype.makeSignature = function(source) {
+	var hmac = new bauth.sjcl.misc.hmac(this.getRequestSecretKey());
+	return bauth.sjcl.codec.base64.fromBits(hmac.encrypt(source));
+}
+
+BandWebAuthSignUpModule.prototype.getRequestSecretKey = function() {
+	var aes = new bauth.sjcl.cipher.aes(this.secretkey);
+	return bauth.sjcl.mode[bauth.sjcl.mode.cbc.name].decrypt(aes, this.ciphertext, this.iv);
+}
+
+BandWebAuthSignUpModule.prototype.generateBaseString = function(url, data) {
+	var result = new Array();
+	data.sort(
+		function(a, b){
+			var aName = a.name;
+			var aValue = a.value;
+			var bName = b.name;
+			var bValue = b.value;
+			if(aName < bName) {
+				return -1;
+			} else if(aName > bName) {
+				return 1;
+			} else {
+				if(aValue < bValue) {
+					return -1;
+				} else if(aValue > bValue) {
+					return 1;
+				} else {
+					return 0;
+				}
+			}
+		}
+	);
+
+	for(var i=0; i < data.length; i++) {
+		if(data[i].name != 'signature') {
+			result.push(this.objectToParamString(data[i]));
+		}
+	}
+	return this.trimDomain(url) +'?' +  result.join('&');
+}
+
+BandWebAuthSignUpModule.prototype.trimDomain = function(url) {
+	var urlParseRE =  /^\s*(((([^:\/#\?]+:)?(?:(\/\/)((?:(([^:@\/#\?]+)(?:\:([^:@\/#\?]+))?)@)?(([^:\/#\?\]\[]+|\[[^\/\]@#?]+\])(?:\:([0-9]+))?))?)?)?((\/?(?:[^\/\?#]+\/+)*)([^\?#]*)))?(\?[^#]+)?)(#.*)?/;
+	var matches = urlParseRE.exec( url || "" ) || [];
+	return matches[ 13 ] || "";
+}
+
+
+BandWebAuthSignUpModule.prototype.objectToParamString = function(ob) {
+	return ob.name + '=' + ob.value;
+};

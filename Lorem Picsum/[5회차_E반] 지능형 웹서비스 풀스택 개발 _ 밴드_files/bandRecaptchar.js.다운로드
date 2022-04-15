@@ -1,0 +1,151 @@
+function existFunction(func){
+	return typeof window[func]=== "function";
+}
+
+if(!existFunction("_hideRecaptchaLoadingBar")){
+	function _hideRecaptchaLoadingBar() {
+
+	}
+}
+
+function _grecaptchaAction(token) {
+}
+
+var _grecaptchaCallback = function(token) {
+    _grecaptchaAction(token);
+};
+
+var bandRecaptcha = {
+
+    executeAnchor : function(aElement, event) {
+        if(captchaLoadingError == true){
+            alert("now loading..., check your network!")
+        } else if(recaptchaInited != true){
+            alert("now loading...");
+            return;
+        }
+        _grecaptchaAction = function(token) {
+            window.location.href = aElement.attr('href') + "&g-recaptcha-response=" + token;
+        }
+
+        event.preventDefault();
+        var response = grecaptcha.getResponse();
+        if(!response) {
+            grecaptcha.execute();
+        } else {
+            _grecaptchaAction(response);
+        }
+
+    },
+
+    executeAnchor : function(aElement, event, keepLogin) {
+        if(captchaLoadingError == true){
+            alert("now loading..., check your network!")
+        } else if(recaptchaInited != true){
+            alert("now loading...");
+            return;
+        }
+        _grecaptchaAction = function(token) {
+            window.location.href = aElement.attr('href') + "&g-recaptcha-response=" + token + "&keep_login=" + keepLogin;
+        }
+        event.preventDefault();
+        var response = grecaptcha.getResponse();
+        if(!response) {
+            grecaptcha.execute();
+        } else {
+            _grecaptchaAction(response);
+        }
+
+    },
+
+    executeLink : function(link, event) {
+        if(captchaLoadingError == true){
+            alert("now loading..., check your network!")
+        } else if(recaptchaInited != true){
+            alert("now loading...");
+            return;
+        }
+        _grecaptchaAction = function(token) {
+            window.location.href = link + "&g-recaptcha-response=" + token;
+        }
+
+        event.preventDefault();
+        var response = grecaptcha.getResponse();
+        if(!response) {
+            grecaptcha.execute();
+            _hideRecaptchaLoadingBar();
+        } else {
+            _grecaptchaAction(response);
+        }
+
+    },
+
+    executeForm : function(form, event){
+        if(captchaLoadingError == true){
+            alert("now loading..., check your network!")
+        } else if(recaptchaInited != true){
+            alert("now loading...");
+            return;
+        }
+        _grecaptchaAction = function(token) {
+            $("input[name='g-recaptcha-response']", form).remove();
+            var phoneSignUpAction = $("<input type='hidden' name='g-recaptcha-response'>");
+            phoneSignUpAction.val(token);
+            phoneSignUpAction.appendTo(form);
+            form.submit();
+        }
+
+        event.preventDefault();
+        var response = grecaptcha.getResponse();
+        if(!response) {
+            grecaptcha.execute();
+        } else {
+            _grecaptchaAction(response);
+        }
+
+    }
+}
+
+var recaptchaInited = false;
+var captchaLoadingError = false;
+
+
+if(!existFunction("recaptchaInitedCallback")){
+	function recaptchaInitedCallback() {
+		recaptchaInited = true;
+	}
+}
+
+
+function captchaErrorHandler(event){
+    captchaLoadingError = true;
+    msg = "script loading error ";
+    if(event != undefined && event.target != undefined){
+        msg += event.target.src;
+    }
+    if(sendMessageToNelo != undefined) {
+        sendMessageToNelo(msg);
+    }
+    return true;
+}
+
+function init() {
+    var bandRecaptchaKey = { webInvisible:"6Lf7sxwUAAAAAMCZndbhrzZ8ybi7JY-fGLIZmHAF"}
+    initBandRecaptcha(bandRecaptchaKey.webInvisible);
+}
+
+function initBandRecaptcha(siteKey) {
+    var ccha = document.createElement("div");
+    ccha.innerHTML = "<div id='recaptcha' class='g-recaptcha' data-sitekey="
+        + siteKey + " data-callback='_grecaptchaCallback' data-size='invisible'></div>";
+
+    document.body.appendChild(ccha);
+
+    var sc = document.createElement("script");
+    sc.onerror = captchaErrorHandler;
+    sc.src="https://www.google.com/recaptcha/api.js?render=onload&onload=recaptchaInitedCallback";
+    document.body.appendChild(sc);
+
+}
+
+//v.20211021-1.0

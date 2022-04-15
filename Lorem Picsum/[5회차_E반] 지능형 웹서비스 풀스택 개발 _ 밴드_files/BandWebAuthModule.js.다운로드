@@ -1,0 +1,216 @@
+function BandWebAuthModule(bandWebAuthInfo) {
+    this.secretKey = bandWebAuthInfo.secretKey;
+    this.intervalRefreshRenewal = bandWebAuthInfo.intervalRefreshRenewal;
+    this.setTimeCorrection(bandWebAuthInfo.timeCorrection);
+    this.signedUser = bandWebAuthInfo.signedUser;
+	this.lockSignedUser = bandWebAuthInfo.lockSignedUser;
+	this.unlockUrl = bandWebAuthInfo.unlockUrl;
+    this.webViewLoginUrl = bandWebAuthInfo.webViewLoginUrl;
+    this.webRefreshFallbackUrl = bandWebAuthInfo.webRefreshFallbackUrl;
+    this.webRefreshUrl = bandWebAuthInfo.webRefreshUrl;
+    this.authenticateState = bandWebAuthInfo.authenticateState;
+    this.appAuthExistentState = bandWebAuthInfo.appAuthExistentState;
+    this.appToWebViewUrl = bandWebAuthInfo.appToWebViewUrl;
+}
+
+BandWebAuthModule.prototype.makeMd = function(source, isApp) {
+    try{
+        if ( typeof isApp == 'undefined' || isApp == false){
+            var hmac = new bauth.sjcl.misc.hmac(bauth.sjcl.codec.utf8String.toBits(this.secretKey));
+        }else{
+            var hmac = new bauth.sjcl.misc.hmac(bauth.sjcl.codec.base64url.toBits(this.secretKey))
+        }
+        var params = {
+            md : bauth.sjcl.codec.base64.fromBits(hmac.encrypt(source))
+        };
+        return params;
+    }catch (e) { // 여기서 올라오는 이벤트를 catch 하지 않고 그냥 window.onerror에서 핸들링하게 하면 stack 로깅 되지 않음.
+        throw e
+    }
+}
+
+BandWebAuthModule.prototype.now = function() {
+    var now = new Date().getTime();
+    return new Date(now + this.timeCorrection).getTime();
+}
+
+BandWebAuthModule.prototype.needTokenRenewal = function() {
+    var ai = this.getCookieValue('ai');
+    var expTime = null;
+    if (this.isNull(ai)) {
+        var bandSession = this.getCookieValue('band_session')
+        if (this.isNull(bandSession)) {
+            return true;
+        }
+        var parsedBandSession = this.parseJwtToken(bandSession, function (e) {
+            // alert("error parse" + e + "," +bandSession);
+            return false;
+        });
+        if(parsedBandSession == null || parsedBandSession.payload == null){
+            return false;
+        }
+        expTime = parsedBandSession.payload.exp * 1000;
+    }else {
+        expTime = parseInt(ai.split(',')[1], 16);
+    }
+    return this.now() > (expTime - (this.intervalRefreshRenewal));
+}
+
+BandWebAuthModule.prototype.getCookieValue = function(name) {
+    var cookies = document.cookie ? document.cookie.split('; ') : [];
+    var i = 0;
+    var l = cookies.length;
+    var result;
+    for (; i < l; i++) {
+        var parts = cookies[i].split('=');
+        var cookieName = parts.shift();
+        var value = parts.join('=');
+        var result = '';
+        if (name === cookieName) {
+            // If second argument (value) is a function it's a converter...
+            result = value;
+            break;
+        }
+    }
+    return result;
+};
+
+BandWebAuthModule.prototype.setTimeCorrection = function(timeCorrection) {
+    this.timeCorrection = timeCorrection;
+}
+
+BandWebAuthModule.prototype.isSignedUser= function() {
+	return this.signedUser;
+}
+
+BandWebAuthModule.prototype.isLockSignedUser= function() {
+	return this.lockSignedUser;
+}
+
+BandWebAuthModule.prototype.getUnlockUrl= function() {
+	return this.unlockUrl;
+}
+BandWebAuthModule.prototype.isWebViewUserAgent = function () {
+    if (window.bandJsHandler) {
+        return true;
+    }
+
+    if (navigator.userAgent.indexOf("BAND") > 0 || navigator.userAgent.indexOf("Band") > 0) {
+        if(navigator.userAgent.match(/Android/i)) {
+            return true;
+        } else if (navigator.userAgent.match(/iPhone/i) || navigator.userAgent.match(/iPod/i) || navigator.userAgent.match(/iPad/i)) {
+            return true;
+        } else {
+            return false;
+        }
+    } else {
+        return false;
+    }
+}
+
+BandWebAuthModule.prototype.redirectWebViewLogin = function(nextUrl){
+    window.location = this.webViewLoginUrl + encodeURIComponent(nextUrl);
+}
+
+BandWebAuthModule.prototype.redirectWebRefreshFallback = function(nextUrl) {
+    window.location = this.webRefreshFallbackUrl + encodeURIComponent(nextUrl);
+}
+
+BandWebAuthModule.prototype.redirectFallbackLogin = function(nextUrl){
+    if(this.isWebViewUserAgent()){
+        this.redirectWebViewLogin(nextUrl)
+    }else{
+        this.redirectWebRefreshFallback(nextUrl);
+    }
+}
+
+BandWebAuthModule.prototype.redirectAppToWebViewLogin = function(nextUrl){
+    if (this.appAuthExistentState == "unknown") {
+        this.replace(this.appToWebViewUrl + encodeURIComponent(nextUrl));
+    }
+}
+
+BandWebAuthModule.prototype.getWebRefreshFallbackUrl=function(nextUrl){
+    return this.webRefreshFallbackUrl+encodeURIComponent(nextUrl)
+};
+
+
+BandWebAuthModule.prototype.parseJwtToken = function(stringToken, errorHandler){
+    try {
+        if(this.isNull(stringToken)){
+            return null;
+        }
+        var parsedToken = stringToken.split('.');
+        if(parsedToken.length != 3){
+            return null;
+        }
+        parsedToken = {
+            header: JSON.parse(atob(parsedToken[0])),
+            payload: JSON.parse(atob(parsedToken[1])),
+            signature: parsedToken[2]
+        }
+        return parsedToken
+    }catch(error){
+        if(errorHandler != undefined){
+            errorHandler(error);
+        }
+        return null;
+    }
+}
+BandWebAuthModule.prototype.checkWebViewCookie = function(errorHandler) {
+    var token = this.getCookieValue("band_session");
+    if (this.isNull(token)) {
+        return {
+            valid: false,
+            userNo: null
+        };
+    }
+    token = this.parseJwtToken(token, errorHandler)
+    if (this.isNull(token)) {
+        return {
+            valid: false,
+            userNo: null
+        };
+    }
+    if (token.payload.exp * 1000 < this.now()) {
+        return {
+            valid: false,
+            userNo: null
+        };
+    }
+    return {
+        valid: true,
+        userNo: token.userNo,
+        osType: this.getOsType(token.payload.o),
+        clientId: token.payload.cl
+    }
+}
+BandWebAuthModule.prototype.isNull  = function(value){
+    if(value == undefined || value == null || value == '' || value == 'null'){
+        return true;
+    }else{
+        return false;
+    }
+}
+BandWebAuthModule.prototype.getOsType = function(osType, logger){
+    switch (osType) {
+        case "A":
+            return "ANDROID";
+        case "IOS":
+            return "IOS";
+            break;
+        case "W":
+            return "WEB";
+            break;
+        case "D":
+            return "DESKTOP";
+            break;
+        default:
+            return null;
+            //throw new Error("invalid osType")
+    }
+}
+BandWebAuthModule.prototype.replace  = function(url){
+    location.replace(url);
+}
+// 20191025-0
